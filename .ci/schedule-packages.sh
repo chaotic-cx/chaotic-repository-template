@@ -43,5 +43,4 @@ declare -p PARAMS >.ci/schedule-params.txt
 # Write necessary redis variables to file .ci/schedule-redis.txt
 for key in "REDIS_SSH_HOST" "REDIS_SSH_PORT" "REDIS_SSH_USER" "REDIS_PORT"; do
     declare -p "$key" >>.ci/schedule-params.txt
-    echo "export $key" >>.ci/schedule-params.txt
 done
