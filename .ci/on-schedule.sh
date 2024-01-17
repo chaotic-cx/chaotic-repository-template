@@ -130,8 +130,11 @@ function update_pkgbuild() {
 
     local PKGBUILD_SOURCE="${VARIABLES_UPDATE_PKGBUILD[CI_PKGBUILD_SOURCE]}"
 
+    # Check if the source starts with gitlab:
+    if [[ "$PKGBUILD_SOURCE" == gitlab:* ]]; then
+        echo "Warning: $pkgbase: Automatic management via gitlab tags is not supported yet." >&2
     # Check if the package is from the AUR
-    if [[ "$PKGBUILD_SOURCE" != aur ]]; then
+    elif [[ "$PKGBUILD_SOURCE" != aur ]]; then
         update_via_git VARIABLES_UPDATE_PKGBUILD "$PKGBUILD_SOURCE"
     else
         local git_url="https://aur.archlinux.org/${pkgbase}.git"
