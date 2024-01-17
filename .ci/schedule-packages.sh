@@ -38,9 +38,9 @@ for i in "${!PACKAGES[@]}"; do
 done
 
 # Write the parameters to a file .ci/schedule-params.txt
-declare -p PARAMS > .ci/schedule-params.txt
+declare -p PARAMS >.ci/schedule-params.txt
 
 # Write necessary redis variables to file .ci/schedule-redis.txt
 for key in "REDIS_SSH_HOST" "REDIS_SSH_PORT" "REDIS_SSH_USER" "REDIS_PORT"; do
-    declare -p "$key" >> .ci/schedule-params.txt
+    declare -p "$key" >>.ci/schedule-params.txt
 done

@@ -15,7 +15,7 @@ git config --global user.name "$GIT_AUTHOR_NAME"
 git config --global user.email "$GIT_AUTHOR_EMAIL"
 
 if [ -v TEMPLATE_ENABLE_UPDATES ] && [ "$TEMPLATE_ENABLE_UPDATES" == "true" ]; then
-    .ci/update-template.sh && echo "Info: Updated CI template." && exit 0 || true 
+    .ci/update-template.sh && echo "Info: Updated CI template." && exit 0 || true
 fi
 
 # Check if the scheduled tag does not exist or scheduled does not point to HEAD
@@ -88,7 +88,7 @@ function package_major_change() {
         return 2
     fi
 
-    if gawk -f .ci/awk/check-diff.awk <<< "$sdiff_output"; then
+    if gawk -f .ci/awk/check-diff.awk <<<"$sdiff_output"; then
         # Check the rest of the files in the folder for changes
         # Excluding PKGBUILD .SRCINFO, .gitignore, .git .CI
         # shellcheck disable=SC2046
@@ -109,7 +109,7 @@ function update_via_git() {
 
     # We always run shfmt on the PKGBUILD. Two runs of shfmt on the same file should not change anything
     shfmt -w "$TMPDIR/aur-pulls/$pkgbase/PKGBUILD"
-    
+
     if package_changed "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase"; then
         if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ] && package_major_change "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase"; then
             echo "Warning: Major change detected in $pkgbase."
