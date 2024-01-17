@@ -1,0 +1,14 @@
+# The target repository that will be the deploy target
+BUILD_REPO="chaotic-aur"
+# The email and name of the user that will be used to commit
+GIT_AUTHOR_EMAIL="ci@example.org"
+GIT_AUTHOR_NAME="chaotic-aur"
+# The redis details for the target repository
+REDIS_SSH_HOST="localhost"
+REDIS_SSH_PORT="22"
+REDIS_SSH_USER="redis"
+REDIS_PORT="6379"
+# The name that this repository is referred to in chaotic-manager's config
+REPO_NAME="chaotic-aur"
+# If merge/pull requests should be created for non pkgver changes
+CI_HUMAN_REVIEW="false"
