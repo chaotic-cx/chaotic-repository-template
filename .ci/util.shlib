@@ -8,7 +8,7 @@ EXCLUDE_FILES=(.CI .git .gitignore)
 # Get a list of all the packages in the repo
 function UTIL_GET_PACKAGES() {
     local -n GET_PACKAGES_ARRAY=${1:-PACKAGES}
-    mapfile -t GET_PACKAGES_ARRAY < <(find . -maxdepth 1 -type d -not -path '*/.*' -printf '%P\n')
+    mapfile -t GET_PACKAGES_ARRAY < <(find . -mindepth 1 -maxdepth 1 -type d -not -path '*/.*' -printf '%P\n')
 }
 
 function UTIL_PRUNE_UNKNOWN_VARIABLES() {
