@@ -10,7 +10,25 @@ git clone --depth=1 "$TEMPLATE_REPO" "$TMPDIR/template" -b "main"
 
 trap "git reset --hard $CURRENT_REV" ERR
 
-rsync -a --delete --include ".gitlab-ci.yml" --include ".github" --include ".github/workflows" --include ".github/workflows/chaotic-on-schedule.yml" --include ".github/workflows/chaotic-on-commit.yml" --exclude ".ci/config" --include ".ci/***" --exclude "*" "$TMPDIR/template/" .
+rsync -a --delete --include ".gitlab-ci.yml" \
+    --exclude ".ci/config" \
+    --include ".ci/***" \
+    --include ".editorconfig" \
+    --include ".envrc" \
+    --include ".github" \
+    --include ".github/workflows" \
+    --include ".github/workflows/chaotic-on-commit.yml" \
+    --include ".github/workflows/chaotic-on-schedule.yml" \
+    --include ".markdownlint.yaml" \
+    --include ".prettierignore" \
+    --include ".shellcheckrc" \
+    --include ".yamllint" \
+    --include "default.nix" \
+    --include "flake.lock" \
+    --include "flake.nix" \
+    --include "shell.nix" \
+    --exclude "*" \
+    "$TMPDIR/template/" .
 
 if ! git diff --exit-code --quiet; then
     git add .
