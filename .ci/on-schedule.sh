@@ -142,7 +142,7 @@ function update_from_gitlab_tag() {
     local COMMIT_URL VERSION
     COMMIT_URL="$(jq -r '.[0].commit.web_url' <<<"$TAG_OUTPUT")"
     VERSION="$(jq -r '.[0].name' <<<"$TAG_OUTPUT")"
-    
+
     if [ -z "$COMMIT_URL" ] || [ -z "$VERSION" ]; then
         echo "ERROR: $pkgbase: Failed to get latest tag." >&2
         return

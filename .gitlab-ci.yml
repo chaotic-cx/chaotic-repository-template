@@ -17,7 +17,7 @@ on-commit:
     - .ci/on-commit.sh
   artifacts:
     paths:
-     - .ci/schedule-params.txt
+      - .ci/schedule-params.txt
     expire_in: 1 hour
   resource_group: chaotic
   rules:
@@ -30,7 +30,7 @@ on-schedule:
     - .ci/on-schedule.sh
   artifacts:
     paths:
-     - .ci/schedule-params.txt
+      - .ci/schedule-params.txt
     expire_in: 1 hour
   resource_group: chaotic
   rules:
