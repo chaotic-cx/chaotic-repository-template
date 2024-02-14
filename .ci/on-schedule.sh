@@ -161,6 +161,7 @@ function update_from_gitlab_tag() {
     fi
 
     # Extract project URL and commit hash from commit URL
+    # shellcheck disable=2034
     local DOWNLOAD_URL BASE_URL COMMIT PROJECT_NAME
     if [[ "$COMMIT_URL" =~ ^(.*)/([^/]+)/-/commit/([^/]+)$ ]]; then
         PROJECT_NAME="${BASH_REMATCH[2]}"
@@ -284,6 +285,7 @@ done
 
 if [ ${#MODIFIED_PACKAGES[@]} -ne 0 ]; then
     .ci/schedule-packages.sh schedule "${MODIFIED_PACKAGES[@]}"
+    .ci/manage-aur.sh "${MODIFIED_PACKAGES[@]}"
 fi
 
 if [ "$COMMIT" = true ]; then
