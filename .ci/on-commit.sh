@@ -113,8 +113,10 @@ else
         # Check if we have to build all packages
         if [[ -v "PACKAGES[all]" ]]; then
             .ci/schedule-packages.sh schedule all
+            .ci/manage-aur.sh all
         else
             .ci/schedule-packages.sh schedule "${!PACKAGES[@]}"
+            .ci/manage-aur.sh "${!PACKAGES[@]}"
         fi
     fi
     if [ "$PACKAGE_REMOVED" = true ]; then
