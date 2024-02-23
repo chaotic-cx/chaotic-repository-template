@@ -249,3 +249,17 @@ function UTIL_READ_CONFIG_FILE() {
         fi
     done
 }
+
+# $1: Run directory
+# $2: Custom hook executable path
+function UTIL_LOAD_CUSTOM_HOOK() {
+	if [[ -f "$2" && -x "$2" ]] && [ -d "$1" ]; then
+        pushd "$1" > /dev/null || return 1
+		"$2" || { 
+            echo "Error: Custom hook failed: $2" >&2
+            popd > /dev/null || return 1
+            return
+        }
+        popd > /dev/null || return 1
+	fi
+}
