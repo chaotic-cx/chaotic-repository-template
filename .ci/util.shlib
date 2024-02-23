@@ -249,3 +249,12 @@ function UTIL_READ_CONFIG_FILE() {
         fi
     done
 }
+
+function UTIL_LOAD_CUSTOM_HOOK() {
+	local hook_name="$1"
+	local hook_file="./${package}/.ci/${hook_name}.sh"
+	if [ -f "$hook_file" ]; then
+		# shellcheck disable=SC1090
+		source "$hook_file"
+	fi
+}
