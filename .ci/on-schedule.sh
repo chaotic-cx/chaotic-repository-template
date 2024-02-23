@@ -281,6 +281,7 @@ for package in "${PACKAGES[@]}"; do
     if UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES; then
         update_pkgbuild VARIABLES
         update_vcs VARIABLES
+        UTIL_LOAD_CUSTOM_HOOK "./${package}" "./${package}/.CI/update.sh"
         UTIL_WRITE_KNOWN_VARIABLES_TO_FILE "./${package}/.CI/config" VARIABLES
 
         if ! git diff --exit-code --quiet; then
