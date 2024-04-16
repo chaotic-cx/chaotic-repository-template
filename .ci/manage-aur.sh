@@ -2,6 +2,9 @@
 # shellcheck disable=2153
 set -euo pipefail
 
+[[ -v "TMPDIR" ]] || TMPDIR="/tmp"
+mkdir -p "$TMPDIR/aur-push"
+
 # This script is used to manage a packages corresponding AUR repo
 # No point in running this script if we don't have keys available
 # we are skipping debug output here to not leak the key
@@ -38,9 +41,6 @@ fi
 # shellcheck source=/dev/null
 source .ci/util.shlib
 export GIT_SSH_COMMAND="-i \"$AUR_KEY_FILE\" ssh -o StrictHostKeyChecking=accept-new"
-
-[[ -v "TMPDIR" ]] || TMPDIR="/tmp"
-mkdir -p "$TMPDIR/aur-push"
 
 if [ -v "PACKAGES[0]" ] && [ "${PACKAGES[0]}" == "all" ]; then
     echo "AUR push of all managed packages requested."
