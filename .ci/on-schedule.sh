@@ -17,7 +17,7 @@ if [ -v TRIGGER ]; then
     UTIL_GET_PACKAGES PACKAGES
     for package in "${PACKAGES[@]}"; do
         unset VARIABLES
-        declare -A VARIABLES
+        declare -A VARIABLES=()
         if UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES; then
             if [ -v "VARIABLES[CI_ON_TRIGGER]" ]; then
                 if [ "${VARIABLES[CI_ON_TRIGGER]}" == "$TRIGGER" ]; then
@@ -92,7 +92,7 @@ function collect_aur_timestamps() {
 
     for package in "${PACKAGES[@]}"; do
         unset VARIABLES
-        declare -gA VARIABLES
+        declare -A VARIABLES=()
         if UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES; then
             if [ -v "VARIABLES[CI_PKGBUILD_SOURCE]" ]; then
                 local PKGBUILD_SOURCE="${VARIABLES[CI_PKGBUILD_SOURCE]}"
@@ -328,7 +328,7 @@ fi
 # Loop through all packages to check if they need to be updated
 for package in "${PACKAGES[@]}"; do
     unset VARIABLES
-    declare -A VARIABLES
+    declare -A VARIABLES=()
     UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || true
     update_pkgbuild VARIABLES
     update_vcs VARIABLES
