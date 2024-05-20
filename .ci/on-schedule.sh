@@ -51,6 +51,22 @@ MODIFIED_PACKAGES=()
 DELETE_BRANCHES=()
 UTIL_GET_PACKAGES PACKAGES
 COMMIT="${COMMIT:-false}"
+PUSH=false
+
+# Check if the current commit is already an automatic commit
+# If it is, check if we should overwrite it
+function manage_commit() {
+    if [ -v CI_OVERWRITE_COMMITS ] && [ "$CI_OVERWRITE_COMMITS" == "true" ]; then
+        local COMMIT_MSG=""
+        local REGEX="^chore\(packages\): update packages( \[skip ci\])?$"
+        if COMMIT_MSG="$(git log -1 --pretty=%s)"; then
+            if [[ "$COMMIT_MSG" =~ $REGEX ]]; then
+                # Signal that we should not only append to the commit, but also force push the branch
+                COMMIT=force
+            fi
+        fi
+    fi
+}
 
 # Loop through all packages to do optimized aur RPC calls
 # $1 = Output associative array
@@ -281,6 +297,9 @@ function update_vcs() {
     fi
 }
 
+# Reduce history pollution from automatic commits
+manage_commit
+
 # Collect last modified timestamps from AUR in an efficient way
 collect_aur_timestamps AUR_TIMESTAMPS
 
@@ -312,8 +331,9 @@ for package in "${PACKAGES[@]}"; do
                 # This is because there is a very high chance this current commit will be amended
                 .ci/create-pr.sh "$package" true
             fi
+            PUSH=true
         else
-            git add .
+            git add "$package"
             if [ "$COMMIT" == "false" ]; then
                 COMMIT=true
                 [ -v GITLAB_CI ] && git commit -q -m "chore(packages): update packages"
@@ -321,6 +341,7 @@ for package in "${PACKAGES[@]}"; do
             else
                 git commit -q --amend --no-edit
             fi
+            PUSH=true
             MODIFIED_PACKAGES+=("$package")
             if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ] && git show-ref --quiet "origin/update-$package"; then
                 DELETE_BRANCHES+=("update-$package")
@@ -334,12 +355,13 @@ if [ ${#MODIFIED_PACKAGES[@]} -ne 0 ]; then
     .ci/manage-aur.sh "${MODIFIED_PACKAGES[@]}"
 fi
 
-if [ "$COMMIT" = true ]; then
+if [ "$PUSH" = true ]; then
     git tag -f scheduled
     git_push_args=()
     for branch in "${DELETE_BRANCHES[@]}"; do
         git_push_args+=(":$branch")
     done
     [ -v GITLAB_CI ] && git_push_args+=("-o" "ci.skip")
+    [ "$COMMIT" == "force" ] && git_push_args+=("--force-with-lease=main")
     git push --atomic origin HEAD:main +refs/tags/scheduled "${git_push_args[@]}"
 fi
