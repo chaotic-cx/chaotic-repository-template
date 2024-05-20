@@ -53,6 +53,20 @@ UTIL_GET_PACKAGES PACKAGES
 COMMIT="${COMMIT:-false}"
 PUSH=false
 
+# Manage the .state worktree to confine the state of packages to a separate branch
+# The goal is to keep the commit history clean
+function manage_state() {
+    if git show-ref --quiet "origin/state"; then
+        git worktree add .state origin/state --detach
+        # We have to make sure that the commit is still in the history of the state branch
+        # Otherwise, this implies a force push happened. We need to re-create the state from scratch.
+        if [ ! -f .state/.commit ] || ! git branch --contains "$(cat .state/.commit)"; then
+            git worktree remove .state
+        fi
+    fi
+    git worktree add .newstate -B state --orphan
+}
+
 # Check if the current commit is already an automatic commit
 # If it is, check if we should overwrite it
 function manage_commit() {
@@ -297,6 +311,9 @@ function update_vcs() {
     fi
 }
 
+# Create .state and .newstate worktrees
+manage_state
+
 # Reduce history pollution from automatic commits
 manage_commit
 
@@ -312,13 +329,11 @@ fi
 for package in "${PACKAGES[@]}"; do
     unset VARIABLES
     declare -A VARIABLES
-    UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || VARIABLES[CI_NO_CONFIG]=true
+    UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || true
     update_pkgbuild VARIABLES
     update_vcs VARIABLES
     UTIL_LOAD_CUSTOM_HOOK "./${package}" "./${package}/.CI/update.sh"
-    if [ ! -v VARIABLES[CI_NO_CONFIG] ]; then
-        UTIL_WRITE_KNOWN_VARIABLES_TO_FILE "./${package}/.CI/config" VARIABLES
-    fi
+    UTIL_WRITE_MANAGED_PACKAGE "$package" VARIABLES
 
     if ! git diff --exit-code --quiet; then
         if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
@@ -349,6 +364,10 @@ for package in "${PACKAGES[@]}"; do
         fi
     fi
 done
+
+git rev-parse HEAD > .newstate/.commit
+git -C .newstate add -A
+git -C .newstate commit -q -m "chore(state): update state" --allow-empty
 
 if [ ${#MODIFIED_PACKAGES[@]} -ne 0 ]; then
     .ci/schedule-packages.sh schedule "${MODIFIED_PACKAGES[@]}"
