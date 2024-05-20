@@ -354,7 +354,7 @@ for package in "${PACKAGES[@]}"; do
                 [ -v GITLAB_CI ] && git commit -q -m "chore(packages): update packages"
                 [ -v GITHUB_ACTIONS ] && git commit -q -m "chore(packages): update packages [skip ci]"
             else
-                git commit -q --amend --no-edit
+                git commit -q --amend --no-edit --date=now
             fi
             PUSH=true
             MODIFIED_PACKAGES+=("$package")
