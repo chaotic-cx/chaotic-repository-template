@@ -160,7 +160,21 @@ function update_via_git() {
     local -n VARIABLES_VIA_GIT=${1:-VARIABLES}
     local pkgbase="${VARIABLES_VIA_GIT[PKGBASE]}"
 
-    git clone -q --depth=1 "$2" "$TMPDIR/aur-pulls/$pkgbase"
+    for i in {1..2}; do
+        if git clone -q --depth=1 "$2" "$TMPDIR/aur-pulls/$pkgbase"; then
+            break
+        fi
+        if [ "$i" -ne 2 ]; then
+            echo "$pkgbase: Failed to clone $2. Retrying in 30 seconds."
+            sleep 30
+        else
+            # Give up
+            false
+        fi
+    done
+
+    # Ratelimits
+    sleep "$CI_CLONE_DELAY"
 
     # We always run shfmt on the PKGBUILD. Two runs of shfmt on the same file should not change anything
     shfmt -w "$TMPDIR/aur-pulls/$pkgbase/PKGBUILD"
@@ -335,7 +349,7 @@ for package in "${PACKAGES[@]}"; do
     UTIL_LOAD_CUSTOM_HOOK "./${package}" "./${package}/.CI/update.sh"
     UTIL_WRITE_MANAGED_PACKAGE "$package" VARIABLES
 
-    if ! git diff --exit-code --quiet; then
+    if ! git diff --exit-code --quiet -- "$package"; then
         if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
             # The updated state of the package will still be written to the state branch, even if the main content goes onto the PR branch
             # This is okay, because merging the PR branch will trigger a build, so that behavior is expected and prevents a double execution

@@ -17,3 +17,5 @@ CI_HUMAN_REVIEW="false"
 CI_MANAGE_AUR="false"
 # If we should overwrite existing automated commits to reduce the size of the git history
 CI_OVERWRITE_COMMITS="true"
+# How long to wait between every executed git clone command for ratelimits
+CI_CLONE_DELAY="0"
