@@ -57,14 +57,14 @@ PUSH=false
 # The goal is to keep the commit history clean
 function manage_state() {
     if git show-ref --quiet "origin/state"; then
-        git worktree add .state origin/state --detach
+        git worktree add .state origin/state --detach -q
         # We have to make sure that the commit is still in the history of the state branch
         # Otherwise, this implies a force push happened. We need to re-create the state from scratch.
         if [ ! -f .state/.commit ] || ! git branch --contains "$(cat .state/.commit)"; then
-            git worktree remove .state
+            git worktree remove .state -q
         fi
     fi
-    git worktree add .newstate -B state --orphan
+    git worktree add .newstate -B state --orphan -q
 }
 
 # Check if the current commit is already an automatic commit
