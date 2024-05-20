@@ -394,5 +394,5 @@ if [ "$PUSH" = true ]; then
     done
     [ -v GITLAB_CI ] && git_push_args+=("-o" "ci.skip")
     [ "$COMMIT" == "force" ] && git_push_args+=("--force-with-lease=main")
-    git push --atomic origin HEAD:main +refs/tags/scheduled "${git_push_args[@]}"
+    git push --atomic origin HEAD:main +state +refs/tags/scheduled "${git_push_args[@]}"
 fi
