@@ -303,7 +303,15 @@ for package in "${PACKAGES[@]}"; do
 
     if ! git diff --exit-code --quiet; then
         if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
-            .ci/create-pr.sh "$package"
+            # The updated state of the package will still be written to the state branch, even if the main content goes onto the PR branch
+            # This is okay, because merging the PR branch will trigger a build, so that behavior is expected and prevents a double execution
+            if [ "$COMMIT" == "false" ]; then
+                .ci/create-pr.sh "$package" false
+            else
+                # If we already made a commit, we should go one commit further back to avoid merge conflicts
+                # This is because there is a very high chance this current commit will be amended
+                .ci/create-pr.sh "$package" true
+            fi
         else
             git add .
             if [ "$COMMIT" == "false" ]; then
