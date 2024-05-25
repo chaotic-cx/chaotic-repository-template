@@ -66,9 +66,29 @@ function generate_deptree() {
     echo "$deptree"
 }
 
+function generate_versions() {
+    set -euo pipefail
+    local VERSIONS=""
+    for i in "${PACKAGES[@]}"; do
+        local PKGVER
+        PKGVER=$(awk -F "= " '/pkgver/ {print $2}' "$i/.SRCINFO")
+        PKGREL=$(awk -F "= " '/pkgrel/ {print $2}' "$i/.SRCINFO")
+
+        # Although unlikely, better be sure to not have any colons in the version
+        if [[ $PKGVER == *":"* ]]; then
+            PKGVER=$(echo "$PKGVER" | cut -d ":" -f 2)
+        fi
+
+        VERSIONS+="$i:$PKGVER-$PKGREL;"
+    done
+    echo "$VERSIONS"
+}
+
 if [ "$COMMAND" == "schedule" ]; then
     PARAMS+=("--deptree")
     PARAMS+=("$(generate_deptree)")
+    PARAMS+=("--versions")
+    PARAMS+=("$(generate_versions)")
     PARAMS+=("${PACKAGES[@]}")
 elif [ "$COMMAND" == "auto-repo-remove" ]; then
     PARAMS+=("${PACKAGES[@]}")
