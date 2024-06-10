@@ -21,3 +21,7 @@ CI_OVERWRITE_COMMITS="true"
 CI_CLONE_DELAY="0"
 # Proxy to use for AUR requests
 CI_AUR_PROXY=""
+# Archlinux / Chaotic-AUR repo mirror to use for pulling db files from
+CI_ARCH_MIRROR="https://arch.mirror.constant.com"
+CI_ARCH_REPOS=("core" "extra" "community" "multilib")
+CI_CAUR_MIRROR="https://builds.garudalinux.org/repos"

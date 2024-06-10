@@ -48,6 +48,8 @@ fi
 PACKAGES=()
 declare -A AUR_TIMESTAMPS
 MODIFIED_PACKAGES=()
+# shellcheck disable=SC2034
+CHANGED_LIBS=()
 DELETE_BRANCHES=()
 UTIL_GET_PACKAGES PACKAGES
 COMMIT="${COMMIT:-false}"
@@ -105,6 +107,46 @@ function collect_aur_timestamps() {
 
     # Get all timestamps from AUR
     http_proxy="$CI_AUR_PROXY" https_proxy="$CI_AUR_PROXY" UTIL_FETCH_AUR_TIMESTAMPS collect_aur_timestamps_output "${AUR_PACKAGES[*]}"
+}
+
+function collect_changed_libs() {
+    for repo in "${CI_ARCH_REPOS[@]}"; do
+        UTIL_PARSE_DATABASE "$repo" "${CI_ARCH_MIRROR}/$repo/os/x86_64/${repo}.db"
+    done
+    UTIL_PARSE_DATABASE "${REPO_NAME}" "${CI_CAUR_MIRROR}/${REPO_NAME}/x86_64/${REPO_NAME}.db"
+
+    diff .ci/lib.state .ci/lib.state.new | grep -E '^< ' | cut -d' ' -f2- >.ci/lib.state.diff
+    while IFS= read -r line; do
+        IFS=':' read -r -a pkg <<<"$line"
+        CHANGED_LIBS+=("${pkg[0]}")
+    done <.ci/lib.state.diff
+}
+
+function update-lib-bump() {
+    local bump=0
+    local -n CONFIG=${1:-VARIABLES}
+
+
+    if [ ! -v CONFIG[CI_REBUILD_TRIGGERS] ]; then
+        return 0
+    fi
+
+    # Split the string on : into an array
+    IFS=':' read -r -a LIBS <<<"${CONFIG[CI_REBUILD_TRIGGERS]}"
+    for library in "${LIBS[@]}"; do
+        if [[ ${CHANGED_LIBS[*]} =~ $library ]]; then
+            bump=1
+        fi
+    done
+
+    if [ $bump -eq 1 ]; then
+        echo "Bumping pkgrel of $package because of a detected library mismatch"
+        if [ ! -v CONFIG[CI_PACKAGE_BUMP] ]; then
+            CONFIG[CI_PACKAGE_BUMP]=1
+        else
+            CONFIG[CI_PACKAGE_BUMP]=${CONFIG[CI_PACKAGE_BUMP]}++
+        fi
+    fi
 }
 
 # $1: dir1
@@ -332,6 +374,9 @@ manage_commit
 # Collect last modified timestamps from AUR in an efficient way
 collect_aur_timestamps AUR_TIMESTAMPS
 
+# Parse database files for library version changes
+collect_changed_libs CHANGED_LIBS
+
 mkdir "$TMPDIR/aur-pulls"
 if [ -f "./.editorconfig" ]; then
     cp "./.editorconfig" "$TMPDIR/aur-pulls/.editorconfig"
@@ -344,10 +389,12 @@ for package in "${PACKAGES[@]}"; do
     UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || true
     update_pkgbuild VARIABLES
     update_vcs VARIABLES
-    UTIL_LOAD_CUSTOM_HOOK "./${package}" "./${package}/.CI/update.sh"
+    update-lib-bump VARIABLES
+    UTIL_LOAD_CUSTOM_HOOK "./$package" "./$package/.CI/update.sh"
     UTIL_WRITE_MANAGED_PACKAGE "$package" VARIABLES
 
     if ! git diff --exit-code --quiet -- "$package"; then
+        # shellcheck disable=SC2102
         if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
             # The updated state of the package will still be written to the state branch, even if the main content goes onto the PR branch
             # This is okay, because merging the PR branch will trigger a build, so that behavior is expected and prevents a double execution
@@ -376,6 +423,9 @@ for package in "${PACKAGES[@]}"; do
         fi
     fi
 done
+
+# Update the lib versions state file
+mv .ci/lib.state.new .ci/lib.state
 
 git rev-parse HEAD > .newstate/.commit
 git -C .newstate add -A
