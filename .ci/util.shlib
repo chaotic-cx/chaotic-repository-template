@@ -302,29 +302,31 @@ function UTIL_LOAD_CUSTOM_HOOK() {
         popd > /dev/null || return 1
 	fi
 
-# $1: The repo name to parse
-# $2: The database URL
+# $1: The database URL
 function UTIL_PARSE_DATABASE() {
-    local repo="$1"
-    local db_url="$2"
+    set -euo pipefail
+    local db_url="$1"
     local already_parsed=() # Prevent processing one pkgbase more than once
 
-    wget -q "${db_url}"
     TEMP="$(mktemp -d)"
-    tar -xf "${repo}".db -C "$TEMP"
+    wget -P "${TEMP}" "${db_url}"
+
+    # Extract db name from URL
+    repo=$(echo "$db_url" | grep -oP '.*\/\K[^\/]*(?=.db)')
+    tar -xf "${TEMP}/${repo}.db" -C "${TEMP}"
 
     while read -r pkgbase version; do
         # Escape any dots in the package name since that breaks the code
         # because of an invalid arithmetic statement
         normalized_pkgbase=${pkgbase//./}
-        if [[ "${already_parsed[*]}" == *"${normalized_pkgbase}"* ]]; then
+        if [ -v already_parsed["${normalized_pkgbase}"] ]; then
             continue
         else
-            already_parsed+=("$normalized_pkgbase")
             hash=$(echo -n "$version" | sha256sum | cut -d' ' -f1)
-            echo "$pkgbase:$hash" >>.ci/lib.state.new
+            echo "$pkgbase:$hash" >>"${TEMP}/lib.state.new"
+            already_parsed["$normalized_pkgbase"]="true"
         fi
-    done < <(find "$TEMP" -maxdepth 2 -name 'desc' -exec awk -f .ci/awk/parse-database.awk {} +)
+    done < <(find "${TEMP}" -maxdepth 2 -name 'desc' -exec awk -f .ci/awk/parse-database.awk {} +)
 }
 
 # $1: Message

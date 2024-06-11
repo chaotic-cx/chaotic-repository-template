@@ -49,7 +49,7 @@ PACKAGES=()
 declare -A AUR_TIMESTAMPS
 MODIFIED_PACKAGES=()
 # shellcheck disable=SC2034
-CHANGED_LIBS=()
+declare -A CHANGED_LIBS=()
 DELETE_BRANCHES=()
 UTIL_GET_PACKAGES PACKAGES
 COMMIT="${COMMIT:-false}"
@@ -110,41 +110,49 @@ function collect_aur_timestamps() {
 }
 
 function collect_changed_libs() {
-    for repo in "${CI_ARCH_REPOS[@]}"; do
-        UTIL_PARSE_DATABASE "$repo" "${CI_ARCH_MIRROR}/$repo/os/x86_64/${repo}.db"
-    done
-    UTIL_PARSE_DATABASE "${REPO_NAME}" "${CI_CAUR_MIRROR}/${REPO_NAME}/x86_64/${REPO_NAME}.db"
+    set -euo pipefail
+    # shellcheck disable=2086,2162
+    read -a link_array <<< $CI_LIB_DB
 
-    diff .ci/lib.state .ci/lib.state.new | grep -E '^< ' | cut -d' ' -f2- >.ci/lib.state.diff
+    for repo in "${link_array[@]}"; do
+        UTIL_PARSE_DATABASE "${repo}"
+    done
+
+    # Sort lib.state in-place because comm requires it
+    sort -o "${TEMP}/lib.state.new"{,}
+    comm -23 .ci/lib.state "${TEMP}/lib.state.new"
+
     while IFS= read -r line; do
         IFS=':' read -r -a pkg <<<"$line"
-        CHANGED_LIBS+=("${pkg[0]}")
-    done <.ci/lib.state.diff
+        CHANGED_LIBS["${pkg[0]}"]="true"
+    done <"$TEMP/lib.state.diff"
 }
 
 function update-lib-bump() {
     local bump=0
-    local -n CONFIG=${1:-VARIABLES}
+    local -n pkg_config=${1:-VARIABLES}
 
 
-    if [ ! -v CONFIG[CI_REBUILD_TRIGGERS] ]; then
+    if [ ! -v pkg_config[CI_REBUILD_TRIGGERS] ]; then
         return 0
     fi
 
     # Split the string on : into an array
     IFS=':' read -r -a LIBS <<<"${CONFIG[CI_REBUILD_TRIGGERS]}"
     for library in "${LIBS[@]}"; do
-        if [[ ${CHANGED_LIBS[*]} =~ $library ]]; then
+        if [[ -v CHANGED_LIBS["$library"] ]]; then
             bump=1
+            break
         fi
     done
 
     if [ $bump -eq 1 ]; then
         echo "Bumping pkgrel of $package because of a detected library mismatch"
-        if [ ! -v CONFIG[CI_PACKAGE_BUMP] ]; then
-            CONFIG[CI_PACKAGE_BUMP]=1
+        if [ ! -v pkg_config[CI_PACKAGE_BUMP] ]; then
+            pkg_config[CI_PACKAGE_BUMP]=1
         else
-            CONFIG[CI_PACKAGE_BUMP]=${CONFIG[CI_PACKAGE_BUMP]}++
+            # shellcheck disable=1116
+            pkg_config[CI_PACKAGE_BUMP]=((pkg_config[CI_PACKAGE_BUMP]++))
         fi
     fi
 }
@@ -425,7 +433,7 @@ for package in "${PACKAGES[@]}"; do
 done
 
 # Update the lib versions state file
-mv .ci/lib.state.new .ci/lib.state
+mv "$TEMP/lib.state.new" .ci/lib.state
 
 git rev-parse HEAD > .newstate/.commit
 git -C .newstate add -A
