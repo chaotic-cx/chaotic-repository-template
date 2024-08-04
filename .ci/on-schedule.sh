@@ -155,8 +155,7 @@ function update-lib-bump() {
         if [ ! -v pkg_config[CI_PACKAGE_BUMP] ]; then
             pkg_config[CI_PACKAGE_BUMP]=1
         else
-            # shellcheck disable=1116
-            pkg_config[CI_PACKAGE_BUMP]=((pkg_config[CI_PACKAGE_BUMP]++))
+            pkg_config[CI_PACKAGE_BUMP]=$((pkg_config[CI_PACKAGE_BUMP] + 1))
         fi
     fi
 }
