@@ -434,7 +434,13 @@ for package in "${PACKAGES[@]}"; do
                 git commit -q --amend --no-edit --date=now
             fi
             PUSH=true
-            MODIFIED_PACKAGES+=("$package")
+
+            # We don't want to schedule packages that have a specific trigger to prevent 
+            # large packages getting scheduled too often and wasting resources (e.g. llvm-git)
+            if [ ! -v VARIABLES[CI_ON_TRIGGER] ]; then
+                MODIFIED_PACKAGES+=("$package")
+            fi
+
             if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ] && git show-ref --quiet "origin/update-$package"; then
                 DELETE_BRANCHES+=("update-$package")
             fi
