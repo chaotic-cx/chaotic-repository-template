@@ -313,8 +313,10 @@ function UTIL_PARSE_DATABASE() {
     # Extract db name from URL
     repo=$(echo "$db_url" | grep -oP '.*\/\K[^\/]*(?=.db)')
 
+    UTIL_PRINT_INFO "Retrieving new package versions from database $repo..."
+
     mkdir -p "${tmp_dir}/${repo}"
-    wget -P "${tmp_dir}/${repo}" "${db_url}"
+    wget -P "${tmp_dir}/${repo}" "${db_url}" &>/dev/null
     tar -xf "${tmp_dir}/${repo}/${repo}.db" -C "${tmp_dir}/${repo}"
 
     while read -r pkgbase version; do
