@@ -160,10 +160,22 @@ function update-lib-bump() {
 
     if [ $bump -eq 1 ]; then
         echo "Bumping pkgrel of $package because of a detected library mismatch"
-        if [ ! -v pkg_config[CI_PACKAGE_BUMP] ]; then
-            pkg_config[CI_PACKAGE_BUMP]=1
-        else
-            pkg_config[CI_PACKAGE_BUMP]=$((pkg_config[CI_PACKAGE_BUMP] + 1))
+        
+        local _PKGVER _BUMPCOUNT _PKGVER_IN_DB
+        # Example format: 1:1.2.3-1/1 or 1.2.3
+        # Split at slash, but if it doesnt exist, set it to 1
+        _PKGVER="${CONFIG[CI_PACKAGE_BUMP]%%/*}"
+        _BUMPCOUNT="${CONFIG[CI_PACKAGE_BUMP]#*/}"
+        _PKGVER_IN_DB=$(grep "$package:" "${_TEMP_LIB}/lib.state.new" | cut -d ":" -f 2)
+
+        if [[ "${_BUMPCOUNT}" == "${CONFIG[CI_PACKAGE_BUMP]}" ]]; then
+            _BUMPCOUNT=1
+        fi
+
+        if [ "$(vercmp "${_PKGVER}" "${_PKGVER_IN_DB}")" = "0" ]; then
+            pkg_config[CI_PACKAGE_BUMP]="$_PKGVER_IN_DB/$_BUMPCOUNT"
+        else 
+            pkg_config[CI_PACKAGE_BUMP]=""
         fi
     fi
 }
@@ -452,7 +464,11 @@ for package in "${PACKAGES[@]}"; do
 done
 
 # Update the lib versions state file
-mv "$_TEMP_LIB/lib.state.new" .ci/lib.state
+if [ $PUSH == true ]; then
+    mv "$_TEMP_LIB/lib.state.new" .ci/lib.state
+    git add .ci/lib.state
+    git commit -q --amend --no-edit --date=now
+fi
 
 git rev-parse HEAD >.newstate/.commit
 git -C .newstate add -A
