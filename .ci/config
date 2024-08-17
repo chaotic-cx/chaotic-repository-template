@@ -23,3 +23,5 @@ CI_CLONE_DELAY="0"
 CI_AUR_PROXY=""
 # Archlinux / Chaotic-AUR repo mirror to use for pulling db files from
 CI_LIB_DB="https://arch.mirror.constant.com/core/os/x86_64/core.db https://arch.mirror.constant.com/community/os/x86_64/community.db https://arch.mirror.constant.com/extra/os/x86_64/extra.db"
+# Exit code indicating an intentional build skip (for pipeline status)
+CI_CODE_SKIP=123
