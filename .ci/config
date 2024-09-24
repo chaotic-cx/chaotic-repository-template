@@ -15,8 +15,6 @@ CI_HUMAN_REVIEW="false"
 # This should be set to true in case select AUR repositories should be managed by CI
 # a fitting SSH key needs to be deployed as AUR_KEY via secret CI variable
 CI_MANAGE_AUR="false"
-# If we should overwrite existing automated commits to reduce the size of the git history
-CI_OVERWRITE_COMMITS="true"
 # How long to wait between every executed git clone command for ratelimits
 CI_CLONE_DELAY="0"
 # Proxy to use for AUR requests

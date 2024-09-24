@@ -73,20 +73,6 @@ function manage_state() {
     git worktree add .newstate -B state --orphan -q
 }
 
-# Check if the current commit is already an automatic commit
-# If it is, check if we should overwrite it
-function manage_commit() {
-    if [ -v CI_OVERWRITE_COMMITS ] && [ "$CI_OVERWRITE_COMMITS" == "true" ]; then
-        local COMMIT_MSG=""
-        local REGEX="^chore\(packages\): update packages( \[skip ci\])?$"
-        if COMMIT_MSG="$(git log -1 --pretty=%s)"; then
-            if [[ "$COMMIT_MSG" =~ $REGEX ]]; then
-                # Signal that we should not only append to the commit, but also force push the branch
-                COMMIT=force
-            fi
-        fi
-    fi
-}
 
 # Loop through all packages to do optimized aur RPC calls
 # $1 = Output associative array
@@ -399,8 +385,6 @@ function update_vcs() {
 # Create .state and .newstate worktrees
 manage_state
 
-# Reduce history pollution from automatic commits
-manage_commit
 
 # Collect last modified timestamps from AUR in an efficient way
 collect_aur_timestamps AUR_TIMESTAMPS
