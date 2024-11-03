@@ -23,3 +23,7 @@ CI_AUR_PROXY=""
 CI_LIB_DB="https://arch.mirror.constant.com/core/os/x86_64/core.db https://arch.mirror.constant.com/extra/os/x86_64/extra.db"
 # Exit code indicating an intentional build skip (for pipeline status)
 CI_CODE_SKIP=123
+# What packages should cause global rebuilds in case of Arch version changes
+CI_REBUILD_TRIGGERS="[]"
+# Default package class, determines which builder can build it
+CI_DEFAULT_CLASS=""
