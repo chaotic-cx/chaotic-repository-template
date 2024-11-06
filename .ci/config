@@ -27,3 +27,5 @@ CI_CODE_SKIP=123
 CI_REBUILD_TRIGGERS=""
 # Default package class, determines which builder can build it
 CI_DEFAULT_CLASS=""
+# Colon separated list of package names that should never cause a rebuild of packages
+CI_REBUILD_BLACKLIST=""
