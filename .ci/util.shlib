@@ -305,13 +305,12 @@ function UTIL_READ_CONFIG_FILE() {
 function UTIL_LOAD_CUSTOM_HOOK() {
     set -euo pipefail
     if [[ -f "$2" ]] && [ -d "$1" ]; then
-        pushd "$1" >/dev/null || return 1
-        PACKAGE="${1##*/}" source "${2#${1}/}" || {
+        (
+            cd "$1" || return 1
+            PACKAGE="${1##*/}" source "${2#${1}/}"
+        ) || {
             UTIL_PRINT_ERROR "Custom hook failed: $2"
-            popd >/dev/null || return 1
-            return
         }
-        popd >/dev/null || return 1
     fi
 }
 
