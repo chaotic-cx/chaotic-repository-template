@@ -454,6 +454,7 @@ function format_maintainers() {
 # Check maintainer trust level for AUR packages
 # $1: package name
 # $2: VARIABLES array name
+# Stores formatted maintainer info in VARIABLES array for later use
 function check_maintainer_trust() {
     set -euo pipefail
     local package="$1"
@@ -461,43 +462,24 @@ function check_maintainer_trust() {
 
     # Only check if package is from AUR
     if ! [ -v "pkg_vars[CI_PKGBUILD_SOURCE]" ] || [ "${pkg_vars[CI_PKGBUILD_SOURCE]}" != "aur" ]; then
-        set +x
         return 0
     fi
 
     # Only check if we have maintainer info
     if ! [ -v "AUR_MAINTAINERS[$package]" ]; then
-        set +x
         return 0
     fi
 
     local untrusted_maintainers
     untrusted_maintainers=$(UTIL_SET_MAINTAINER_STRATEGY pkg_vars "${AUR_MAINTAINERS[$package]}")
 
+    # Store formatted maintainer info in VARIABLES for later use
     if [[ -v pkg_vars[CI_MAINTAINER_TRUSTED] ]] && [ "${pkg_vars[CI_MAINTAINER_TRUSTED]}" == "true" ]; then
-        local all_formatted
-        all_formatted=$(format_maintainers "${AUR_MAINTAINERS[$package]}")
-        local maintainer_count
-        IFS=',' read -ra tmp_array <<<"${AUR_MAINTAINERS[$package]}"
-        maintainer_count=${#tmp_array[@]}
-        
-        if [ "$maintainer_count" -eq 1 ]; then
-            UTIL_PRINT_INFO "$package: Maintainer '$all_formatted' is trusted. Updates will be applied directly."
-        fi
+        pkg_vars[CI_MAINTAINER_FORMATTED]=$(format_maintainers "${AUR_MAINTAINERS[$package]}")
     else
-        # Only print untrusted maintainers
+        # Store untrusted maintainers if any
         if [ -n "$untrusted_maintainers" ]; then
-            local formatted_untrusted
-            formatted_untrusted=$(format_maintainers "$untrusted_maintainers")
-            local untrusted_count
-            IFS=',' read -ra tmp_array <<<"$untrusted_maintainers"
-            untrusted_count=${#tmp_array[@]}
-            
-            if [ "$untrusted_count" -eq 1 ]; then
-                UTIL_PRINT_INFO "$package: Maintainer '$formatted_untrusted' is not trusted. Major updates will require human review."
-            else
-                UTIL_PRINT_INFO "$package: Maintainers '$formatted_untrusted' are not trusted. Major updates will require human review."
-            fi
+            pkg_vars[CI_MAINTAINER_FORMATTED]=$(format_maintainers "$untrusted_maintainers")
         fi
     fi
 }
@@ -539,14 +521,19 @@ for package in "${PACKAGES[@]}"; do
     if ! git diff --exit-code --quiet -- "$package"; then
         # shellcheck disable=SC2102
         if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
+            maintainer_info=""
+            if [[ -v VARIABLES[CI_MAINTAINER_FORMATTED] ]]; then
+                maintainer_info=" ${VARIABLES[CI_MAINTAINER_FORMATTED]}"
+            fi
+
             # If maintainer is trusted, skip PR creation and apply update directly
             if [[ -v VARIABLES[CI_MAINTAINER_TRUSTED] ]] && [ "${VARIABLES[CI_MAINTAINER_TRUSTED]}" == "true" ]; then
-                UTIL_PRINT_INFO "$package: Skipping PR creation for $package due to trusted maintainer."
+                UTIL_PRINT_INFO "$package: Skipping PR creation due to trusted maintainer(s)$maintainer_info"
                 git add "$package"
                 generate-commit "$package"
                 MODIFIED_PACKAGES+=("$package")
             else
-                UTIL_PRINT_INFO "$package: Creating PR for review for $package due to untrusted maintainer."
+                UTIL_PRINT_INFO "$package: Creating PR for review due to untrusted maintainer(s)$maintainer_info"
                 if [ "$COMMIT" == "false" ]; then
                     .ci/create-pr.sh "$package" false
                 else
