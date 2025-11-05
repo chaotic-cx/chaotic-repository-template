@@ -12,6 +12,8 @@ REDIS_PORT="6379"
 REPO_NAME="chaotic-aur"
 # If merge/pull requests should be created for non pkgver changes
 CI_HUMAN_REVIEW="false"
+# Default assignee for human review merge/pull requests (GitLab user ID / GitHub unsupported)
+CI_HUMAN_REVIEW_ASSIGNEE=""
 # This should be set to true in case select AUR repositories should be managed by CI
 # a fitting SSH key needs to be deployed as AUR_KEY via secret CI variable
 CI_MANAGE_AUR="false"
