@@ -225,31 +225,103 @@ function package_changed() {
   return 0
 }
 
+function package_major_change_normalize() {
+  local line="$1"
+  sed -Ee "s/'([a-zA-Z0-9_.-]+)'/\1/g" -e 's/"([a-zA-Z0-9_.-]+)"/\1/g' <<<"$line"
+}
+
+function package_major_change_sum_legal() {
+  local sumline="$1"
+  sumline="$(package_major_change_normalize "$sumline")"
+
+  if [[ "$sumline" =~ ^[[:space:]]*[a-fA-F0-9]*[[:space:]]*$ ]]; then
+    # This is a legal sum line
+    echo "PASS"
+  elif [[ "$sumline" =~ ^[[:space:]]*[a-fA-F0-9]*[[:space:]]*\)[[:space:]]*$ ]]; then
+    # Legal sum line (optional) + end of sums array
+    echo "END"
+  else
+    # Illegal line in sums array
+    echo "FAIL"
+  fi
+}
+
 # Check if the package has gotten major changes
 # Any change that is not a pkgver or pkgrel bump is considered a major change
-# $1: dir1
-# $2: dir2
+# $1: Directory containing new PKGBUILD
+# $2: Directory containing old PKGBUILD
 function package_major_change() {
   set -euo pipefail
-  local sdiff_output
-  if sdiff_output="$(sdiff -ds <(gawk -f .ci/awk/remove-checksum.awk "$1/PKGBUILD") <(gawk -f .ci/awk/remove-checksum.awk "$2/PKGBUILD"))"; then
-    return 1
-  fi
+  local newFileLine oldFileLine inSums
+  inSums=false
 
-  if [ $? -eq 2 ]; then
-    UTIL_PRINT_ERROR "$2: sdiff failed"
-    return 2
-  fi
+  local pkgverRegex='^_?pkgver *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
+  local pkgrelRegex='^pkgrel *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
+  local sumsArrayStartRegex='^(sha(128|256|512)|md5|b2)sums *= *\((.*)$'
 
-  if gawk -f .ci/awk/check-diff.awk <<<"$sdiff_output"; then
-    # Check the rest of the files in the folder for changes
-    # Excluding PKGBUILD .SRCINFO, .gitignore, .git .CI
-    # shellcheck disable=SC2046
-    if diff -q $(UTIL_GET_EXCLUDE_LIST "-x" "PKGBUILD .SRCINFO") -r "$1" "$2" >/dev/null; then
-      return 1
+  while read newFileLine <&3 && read oldFileLine <&4; do
+    # Compare file line by line
+
+    if [[ "$newFileLine" =~ $sumsArrayStartRegex ]] && [[ "$inSums" == false ]]; then
+      inSums=true
+      newFileLine="${BASH_REMATCH[3]}"
+      # Old file also has to be checked. Is this also the start of the sums array?
+      if [[ "$oldFileLine" =~ $sumsArrayStartRegex ]]; then
+        oldFileLine="${BASH_REMATCH[3]}"
+      else
+        # Old file does not have sums array start where new file has it. Major change.
+        return
+      fi
     fi
+
+    if [[ "$inSums" == true ]]; then
+        local newSumCheck oldSumCheck
+        newSumCheck="$(package_major_change_sum_legal "$newFileLine")"
+        oldSumCheck="$(package_major_change_sum_legal "$oldFileLine")"
+        if [[ "$newSumCheck" != "$oldSumCheck" ]]; then
+          # One of the files has an illegal sum line or one ended the sums while the other didn't
+          return
+        fi
+        case "$newSumCheck" in
+          PASS) continue ;;
+          END) inSums=false; continue ;;
+          FAIL) return ;;
+        esac
+        return
+    fi
+
+    if [[ "$newFileLine" == "$oldFileLine" ]]; then
+      # Exact match, ignore this
+      continue
+    fi
+
+    # Check if the line is a legal pkgver or pkgrel change
+    # Legal means that both the line in the old file and the line in the new file are okay
+    # This prevents a malicious change that changes a line that wasn't a pkgver line before
+    if [[ "$newFileLine" =~ $pkgverRegex && "$oldFileLine" =~ $pkgverRegex ]]; then
+      # A-okay
+      continue
+    fi
+
+    # Check if the line is a legal pkgrel change
+    # Same notes as above
+    if [[ "$newFileLine" =~ $pkgrelRegex && "$oldFileLine" =~ $pkgrelRegex ]]; then
+      continue
+    fi
+
+    # If we reach this point, the change is major
+    return
+  done 3<"$1/PKGBUILD" 4<"$2/PKGBUILD"
+
+  # Check the rest of the files in the folder for changes
+  # Excluding PKGBUILD .SRCINFO, .gitignore, .git .CI
+  # shellcheck disable=SC2046
+  if ! diff -q $(UTIL_GET_EXCLUDE_LIST "-x" "PKGBUILD .SRCINFO") -r "$1" "$2" >/dev/null; then
+    return
   fi
-  return 0
+
+  # No major changes found
+  echo "PASS"
 }
 
 # $1: VARIABLES
@@ -286,9 +358,16 @@ function update_via_git() {
   # We always run shfmt on the PKGBUILD. Two runs of shfmt on the same file should not change anything
   shfmt -w "$TMPDIR/aur-pulls/$pkgbase/PKGBUILD"
   if package_changed "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase"; then
-    if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ] && package_major_change "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase"; then
-      UTIL_PRINT_INFO "$pkgbase: Major change detected."
-      VARIABLES_VIA_GIT[CI_REQUIRES_REVIEW]=true
+    if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ]; then
+      local package_major_change_output
+      if ! package_major_change_output="$(package_major_change "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase")"; then
+        UTIL_PRINT_ERROR "$pkgbase: Failed to check for major changes."
+        return
+      fi
+      if [ "$package_major_change_output" != "PASS" ]; then
+        UTIL_PRINT_INFO "$pkgbase: Major change detected."
+        VARIABLES_VIA_GIT[CI_REQUIRES_REVIEW]=true
+      fi
     fi
     # Rsync: delete files in the destination that are not in the source. Exclude deleting .CI, exclude copying .git
     # shellcheck disable=SC2046
