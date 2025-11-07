@@ -234,11 +234,12 @@ function package_major_change_sum_legal() {
   local sumline="$1"
   sumline="$(package_major_change_normalize "$sumline")"
 
-  if [[ "$sumline" =~ ^[[:space:]]*[a-fA-F0-9]*[[:space:]]*$ ]]; then
+  if [[ "$sumline" =~ ^[[:space:]]*([a-fA-F0-9]+|SKIP)?[[:space:]]*$ ]]; then
     # This is a legal sum line
     echo "PASS"
-  elif [[ "$sumline" =~ ^[[:space:]]*[a-fA-F0-9]*[[:space:]]*\)[[:space:]]*$ ]]; then
+  elif [[ "$sumline" =~ ^[[:space:]]*([a-fA-F0-9]+|SKIP)?[[:space:]]*\)[[:space:]]*$ ]]; then
     # Legal sum line (optional) + end of sums array
+    # The reason for making the sum optional is to allow for the array to end on a line that only has ")"
     echo "END"
   else
     # Illegal line in sums array
@@ -250,6 +251,10 @@ function package_major_change_sum_legal() {
 # Any change that is not a pkgver or pkgrel bump is considered a major change
 # $1: Directory containing new PKGBUILD
 # $2: Directory containing old PKGBUILD
+# Return code is 0 if no errors have been detected
+# 0 does NOT mean no major changes.
+# The string "PASS" is output if no major changes have been detected
+# Otherwise, no output is given
 function package_major_change() {
   set -euo pipefail
   local newFileLine oldFileLine inSums
@@ -257,7 +262,7 @@ function package_major_change() {
 
   local pkgverRegex='^_?pkgver *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
   local pkgrelRegex='^pkgrel *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
-  local sumsArrayStartRegex='^(sha(128|256|512)|md5|b2)sums *= *\((.*)$'
+  local sumsArrayStartRegex='^(sha(1|224|256|384|512)|md5|b2)sums *= *\((.*)$'
 
   while read newFileLine <&3 && read oldFileLine <&4; do
     # Compare file line by line
@@ -270,7 +275,7 @@ function package_major_change() {
         oldFileLine="${BASH_REMATCH[3]}"
       else
         # Old file does not have sums array start where new file has it. Major change.
-        return
+        return 0
       fi
     fi
 
@@ -280,20 +285,25 @@ function package_major_change() {
         oldSumCheck="$(package_major_change_sum_legal "$oldFileLine")"
         if [[ "$newSumCheck" != "$oldSumCheck" ]]; then
           # One of the files has an illegal sum line or one ended the sums while the other didn't
-          return
+          return 0
         fi
         case "$newSumCheck" in
           PASS) continue ;;
           END) inSums=false; continue ;;
-          FAIL) return ;;
+          FAIL) return 0 ;;
         esac
-        return
+        # Failsafe
+        return 0
     fi
 
     if [[ "$newFileLine" == "$oldFileLine" ]]; then
       # Exact match, ignore this
       continue
     fi
+
+    # Normalize any kinds of quotes in the lines for the following checks
+    newFileLine="$(package_major_change_normalize "$newFileLine")"
+    oldFileLine="$(package_major_change_normalize "$oldFileLine")"
 
     # Check if the line is a legal pkgver or pkgrel change
     # Legal means that both the line in the old file and the line in the new file are okay
@@ -310,14 +320,14 @@ function package_major_change() {
     fi
 
     # If we reach this point, the change is major
-    return
+    return 0
   done 3<"$1/PKGBUILD" 4<"$2/PKGBUILD"
 
   # Check the rest of the files in the folder for changes
   # Excluding PKGBUILD .SRCINFO, .gitignore, .git .CI
   # shellcheck disable=SC2046
   if ! diff -q $(UTIL_GET_EXCLUDE_LIST "-x" "PKGBUILD .SRCINFO") -r "$1" "$2" >/dev/null; then
-    return
+    return 0
   fi
 
   # No major changes found
@@ -361,7 +371,7 @@ function update_via_git() {
     if [ -v CI_HUMAN_REVIEW ] && [ "$CI_HUMAN_REVIEW" == "true" ]; then
       local package_major_change_output
       if ! package_major_change_output="$(package_major_change "$TMPDIR/aur-pulls/$pkgbase" "$pkgbase")"; then
-        UTIL_PRINT_ERROR "$pkgbase: Failed to check for major changes."
+        UTIL_PRINT_ERROR "$pkgbase: Error running major change check."
         return
       fi
       if [ "$package_major_change_output" != "PASS" ]; then
