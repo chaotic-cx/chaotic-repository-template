@@ -170,12 +170,14 @@ function manage_branch() {
   if git show-ref --quiet "origin/$branch"; then
     git switch -q "$branch"
     git checkout -q stash -- "$pkgbase"
+    git add "$pkgbase"
     # Branch already exists, let's see if it's up to date
     # Also check if previous parent commit is no longer ancestor of target_branch
     if ! git diff --staged --exit-code --quiet || ! git merge-base --is-ancestor HEAD^ "origin/$target_branch"; then
       # Not up to date
       git reset -q --hard "origin/$target_branch"
       git checkout stash -q -- "$pkgbase"
+      git add "$pkgbase"
       git commit -q -m "chore($pkgbase): PKGBUILD modified"
       git push --force-with-lease origin "$CHANGE_BRANCH"
     fi
@@ -183,12 +185,12 @@ function manage_branch() {
     # Branch does not exist, let's create it
     git switch -q -C "$branch" "origin/$target_branch"
     git checkout stash -q -- "$pkgbase"
+    git add "$pkgbase"
     git commit -q -m "chore($pkgbase): PKGBUILD modified"
     git push --force-with-lease origin "$CHANGE_BRANCH"
   fi
   git stash drop -q
 }
-
 PKGBASE="$1"
 
 ASSIGN_TO_ID="${CI_HUMAN_REVIEW_ASSIGNEE:-}"
