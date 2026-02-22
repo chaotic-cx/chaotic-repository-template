@@ -31,11 +31,14 @@ for package_string in "${PACKAGES_LIST[@]}"; do
         else
             GIT_URL=""
             branch=""
+            CI_PKGBUILD_SOURCE=""
             if [[ "$source" == "aur" ]]; then
                 GIT_URL="https://github.com/archlinux/aur.git"
                 branch="$pkgbase"
+                CI_PKGBUILD_SOURCE="aur"
             else
                 GIT_URL="$source"
+                CI_PKGBUILD_SOURCE="$source"
             fi
 
             output_path=""
@@ -50,6 +53,16 @@ for package_string in "${PACKAGES_LIST[@]}"; do
             # Rsync: exclude copying .git, exclude copying .CI
             # shellcheck disable=SC2046
             rsync -a $(UTIL_GET_EXCLUDE_LIST "--exclude") "$output_path/" "$pkgbase/"
+
+            mkdir -p "$pkgbase/.CI"
+            echo "CI_PKGBUILD_SOURCE=$CI_PKGBUILD_SOURCE" >"$pkgbase/.CI/config"
+
+            if [ -v REQUEST_ORIGIN ] && [ -n "$REQUEST_ORIGIN" ]; then
+                echo "REQ_ORIGIN=$REQUEST_ORIGIN" >"$pkgbase/.CI/info"
+            fi
+            if [ -v REQUEST_REASON ] && [ -n "$REQUEST_REASON" ]; then
+                echo "REQ_REASON=$REQUEST_REASON" >>"$pkgbase/.CI/info"
+            fi
 
             MODIFIED_PACKAGES+=("$pkgbase")
         fi

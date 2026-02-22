@@ -12,6 +12,11 @@ spec:
       rules:
         - if: $[[ inputs.operation ]] == 'Bump Packages' || $[[ inputs.operation ]] == 'Schedule Packages' || $[[ inputs.operation ]] == 'Drop Packages'
           default: null
+    trigger:
+      description: 'Which schedule to trigger'
+      rules:
+        - if: $[[ inputs.operation ]] == 'Run Schedule'
+          default: null
     add_packages:
       description: 'A space-separated list of packages+package sources in pkgbase/source format. Example: paru/aur'
       type: string
@@ -19,10 +24,24 @@ spec:
       rules:
         - if: $[[ inputs.operation ]] == 'Add Packages'
           default: null
-    trigger:
-      description: 'Which schedule to trigger'
+    request_origin:
+      description: 'Where and who requested this package? Example: github/5678,chaotic/xiota,forum/tne'
+      type: string
       rules:
-        - if: $[[ inputs.operation ]] == 'Run Schedule'
+        - if: $[[ inputs.operation ]] == 'Add Packages'
+          default: null
+    request_reason:
+      description: 'Why is this package being added?'
+      type: string
+      rules:
+        - if: $[[ inputs.operation ]] == 'Add Packages'
+          options: ['request', 'depends', 'depends:optional', 'depends:make', 'depends:check', 'other']
+          default: 'request'
+    custom_request_reason:
+      description: 'Overwrites request_reason'
+      type: string
+      rules:
+        - if: $[[ inputs.operation ]] == 'Add Packages'
           default: null
 
 ---
@@ -31,7 +50,6 @@ stages: [process, schedule]
 variables:
   REPO_URL: https://oauth2:$ACCESS_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
   PACKAGES: $[[ inputs.packages ]]
-  ADD_PACKAGES: $[[ inputs.add_packages ]]
   TRIGGER: $[[ inputs.trigger ]]
 
 default:
@@ -107,10 +125,16 @@ manual-add:
   stage: process
   image: alpine:latest
   script:
+    - REQUEST_REASON=${CUSTOM_REQUEST_REASON:-$REQUEST_REASON}
     - .ci/manual-add.sh
   resource_group: chaotic
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "$[[ inputs.operation ]]" == 'Add Packages' && "$[[ inputs.add_packages ]]" != ""
+  variables:
+    ADD_PACKAGES: $[[ inputs.add_packages ]]
+    REQUEST_ORIGIN: $[[ inputs.request_origin ]]
+    REQUEST_REASON: $[[ inputs.request_reason ]]
+    CUSTOM_REQUEST_REASON: $[[ inputs.custom_request_reason ]]
 
 do-schedule:
   stage: schedule
