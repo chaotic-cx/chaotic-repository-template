@@ -3,14 +3,21 @@ spec:
     operation:
       description: 'Operation to perform'
       type: string
-      options: ['None', 'Bump Packages', 'Schedule Packages', 'Run Schedule']
+      options: ['None', 'Bump Packages', 'Schedule Packages', 'Run Schedule', 'Drop Packages', 'Add Packages']
       default: 'None'
     packages:
       description: 'A colon-separated list of packages'
       type: string
-      regex: ^(?:[^\s:]+(?::[^\s:]+)*)?$
+      regex: '^(?:[\w@.+\-]+(?::[\w@.+\-]+)*)?$'
       rules:
-        - if: $[[ inputs.operation ]] == 'Bump Packages' || $[[ inputs.operation ]] == 'Schedule Packages'
+        - if: $[[ inputs.operation ]] == 'Bump Packages' || $[[ inputs.operation ]] == 'Schedule Packages' || $[[ inputs.operation ]] == 'Drop Packages'
+          default: null
+    add_packages:
+      description: 'A space-separated list of packages+package sources in pkgbase/source format. Example: paru/aur'
+      type: string
+      regex: '^([\w@.+\-]+/(aur|(https?|git)://\S+)(\s[\w@.+\-]+/(aur|(https?|git)://\S+))*)?$'
+      rules:
+        - if: $[[ inputs.operation ]] == 'Add Packages'
           default: null
     trigger:
       description: 'Which schedule to trigger'
@@ -24,6 +31,7 @@ stages: [process, schedule]
 variables:
   REPO_URL: https://oauth2:$ACCESS_TOKEN@$CI_SERVER_HOST/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME
   PACKAGES: $[[ inputs.packages ]]
+  ADD_PACKAGES: $[[ inputs.add_packages ]]
   TRIGGER: $[[ inputs.trigger ]]
 
 default:
@@ -82,14 +90,27 @@ manual-bump:
   image: alpine:latest
   script:
     - .ci/manual-bump.sh
-  artifacts:
-    paths:
-      - .ci/deptree.txt
-      - .ci/schedule-params.txt
-    expire_in: 1 hour
   resource_group: chaotic
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "$[[ inputs.operation ]]" == 'Bump Packages' && "$[[ inputs.packages ]]" != ""
+
+manual-drop:
+  stage: process
+  image: alpine:latest
+  script:
+    - .ci/manual-drop.sh
+  resource_group: chaotic
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "$[[ inputs.operation ]]" == 'Drop Packages' && "$[[ inputs.packages ]]" != ""
+
+manual-add:
+  stage: process
+  image: alpine:latest
+  script:
+    - .ci/manual-add.sh
+  resource_group: chaotic
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "$[[ inputs.operation ]]" == 'Add Packages' && "$[[ inputs.add_packages ]]" != ""
 
 do-schedule:
   stage: schedule
@@ -107,4 +128,4 @@ do-schedule:
         if [[ -v PARAMS_AUTOREPOREMOVE ]]; then /entry_point.sh "${PARAMS_AUTOREPOREMOVE[@]}"; fi;
       fi
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "$[[ inputs.operation ]]" != 'Bump Packages'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && ($CI_PIPELINE_SOURCE == "push" || "$[[ inputs.operation ]]" == 'Schedule Packages' || "$[[ inputs.operation ]]" == 'Run Schedule')
