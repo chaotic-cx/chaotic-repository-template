@@ -496,6 +496,9 @@ function UTIL_UPDATE_CHECKSUMS() {
     fi
 
     if [ -f "$pkgbase/.SRCINFO" ]; then
+        cp "$pkgbase/PKGBUILD" "$TEMP_DIR/PKGBUILD"
+        chown nobody "$TEMP_DIR/PKGBUILD"
+        # shellcheck disable=SC2024
         sudo -u nobody bash -c "cd $TEMP_DIR && makepkg --printsrcinfo" >"$pkgbase/.SRCINFO"
     fi
     rm -rf "$TEMP_DIR"

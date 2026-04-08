@@ -519,10 +519,8 @@ function update_nvchecker() {
     return 0
   fi
 
-  local pkgbuild_source="${VARIABLES_UPDATE_NVCHECKER[CI_PKGBUILD_SOURCE]:-}"
-  if [ -n "$pkgbuild_source" ] && [ "$pkgbuild_source" != "custom" ]; then
-    UTIL_PRINT_WARNING "$pkgbase: CI_NVCHECKER is enabled but CI_PKGBUILD_SOURCE='$pkgbuild_source' is not custom. Skipping nvchecker."
-    return 0
+  if [[ "${VARIABLES_UPDATE_NVCHECKER[CI_PKGBUILD_SOURCE]:-}" != "custom" ]]; then
+    UTIL_PRINT_WARNING "$pkgbase: CI_NVCHECKER is enabled but CI_PKGBUILD_SOURCE is not set to 'custom'"
   fi
 
   if [ ! -f "$config_file" ] && [ -f "${pkgbase}/.nvchecker.toml" ]; then
@@ -554,11 +552,15 @@ function update_nvchecker() {
 
   UTIL_PRINT_INFO "$pkgbase: nvchecker detected update to $version."
 
+  if [ ! -f "$pkgbase/PKGBUILD" ]; then
+    return 0
+  fi
+
   local old_version=""
   if [ -f "$pkgbase/.SRCINFO" ]; then
     old_version="$(grep -m 1 -oP '\tpkgver\s=\s\K.*$' "$pkgbase/.SRCINFO" || true)"
   fi
-  if [ -z "$old_version" ] && [ -f "$pkgbase/PKGBUILD" ]; then
+  if [ -z "$old_version" ]; then
     old_version="$(gawk -f .ci/awk/get-pkgver-from-pkgbuild.awk "$pkgbase/PKGBUILD" || true)"
   fi
 
@@ -567,15 +569,13 @@ function update_nvchecker() {
     return 0
   fi
 
-  if [ -f "$pkgbase/PKGBUILD" ]; then
-    gawk -i inplace -f .ci/awk/update-pkgbuild-nvchecker.awk \
-      -v TARGET_VERSION="$target_version" \
-      -v TARGET_REVISION="$revision" \
-      -v OLD_VERSION="$old_version" \
-      "$pkgbase/PKGBUILD"
+  gawk -i inplace -f .ci/awk/update-pkgbuild-nvchecker.awk \
+    -v TARGET_VERSION="$target_version" \
+    -v TARGET_REVISION="$revision" \
+    -v OLD_VERSION="$old_version" \
+    "$pkgbase/PKGBUILD"
 
-    UTIL_UPDATE_CHECKSUMS "$pkgbase"
-  fi
+  UTIL_UPDATE_CHECKSUMS "$pkgbase"
 
   VARIABLES_UPDATE_NVCHECKER[CI_ANY_UPDATE]=true
   if [ "${CI_NVCHECKER_REVIEW:-false}" == "true" ]; then
