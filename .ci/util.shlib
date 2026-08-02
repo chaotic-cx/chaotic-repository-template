@@ -279,6 +279,26 @@ function UTIL_FETCH_AUR_INFO() {
     done
 }
 
+# Print local files referenced by a package's .SRCINFO: local source files,
+# install scripts and changelogs. Remote sources (URLs and renamed URLs) are skipped.
+# $1: package directory
+function UTIL_GET_LOCAL_SOURCE_FILES() {
+    set -euo pipefail
+    local srcinfo="$1/.SRCINFO"
+    if [ ! -f "$srcinfo" ]; then
+        return 0
+    fi
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*(source(_[[:alnum:]_]+)?|install|changelog)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            local value="${BASH_REMATCH[3]}"
+            if [[ "$value" == *"://"* ]] || [[ "$value" == *"::"* ]]; then
+                continue
+            fi
+            [ -n "$value" ] && printf '%s\n' "$value"
+        fi
+    done < "$srcinfo"
+}
+
 # Generate exclude list for rsync, diff, etc.
 # $1: prefix
 # $2: Extra ignores
