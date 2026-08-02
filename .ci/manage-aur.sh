@@ -81,9 +81,24 @@ for package in "${PACKAGES[@]}"; do
     fi
     shfmt -w "$TMPDIR/aur-push/$package/PKGBUILD"
 
-    # Rsync: delete files in the destination that are not in the source. Exclude copying .CI and .git
-    # shellcheck disable=SC2046
-    rsync -av --delete $(UTIL_GET_EXCLUDE_LIST "--exclude") "$package/" "$TMPDIR/aur-push/$package/"
+    # Build the upload set from the package's .SRCINFO: local source files,
+    # install scripts, changelogs, plus PKGBUILD, .SRCINFO and .nvchecker.toml.
+    declare -a upload_files=(PKGBUILD .SRCINFO)
+    if [ -f "$package/.nvchecker.toml" ]; then
+      upload_files+=(.nvchecker.toml)
+    fi
+    while IFS= read -r file; do
+      if [ -f "$package/$file" ]; then
+        upload_files+=("$file")
+      fi
+    done < <(UTIL_GET_LOCAL_SOURCE_FILES "$package")
+
+    rsync_args=(-a --delete --delete-excluded --filter='P .git*' --filter='- .CI' --filter='- .ci')
+    for file in "${upload_files[@]}"; do
+      rsync_args+=(--include="$file")
+    done
+    rsync_args+=(--include='*/' --exclude='*')
+    rsync "${rsync_args[@]}" "$package/" "$TMPDIR/aur-push/$package/"
 
     # Only push if there are changes
     pushd "$TMPDIR/aur-push/$package"
