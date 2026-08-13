@@ -162,36 +162,35 @@ function create_github_pr() {
 }
 
 # $1: branch
-# $2: target branch
+# $2: base ref the PR branch is built on
 # $3: pkgbase
 function manage_branch() {
   local branch="$1"
-  local target_branch="$2"
+  local base_ref="$2"
   local pkgbase="$3"
+  local tmpwork
 
-  git stash -q
-  if git show-ref --quiet "origin/$branch"; then
-    git switch -q "$branch"
-    git checkout -q stash -- "$pkgbase"
-    git add "$pkgbase"
-    # Branch already exists, let's see if it's up to date
-    # Also check if previous parent commit is no longer ancestor of target_branch
-    if ! git diff --staged --exit-code --quiet || ! git merge-base --is-ancestor HEAD^ "origin/$target_branch"; then
-      # Not up to date
-      git reset -q --hard "origin/$target_branch"
-      git checkout stash -q -- "$pkgbase"
-      git add "$pkgbase"
-      git commit -q -m "chore(update): $pkgbase"
-      git push --force-with-lease origin "$CHANGE_BRANCH"
-    fi
-  else
-    # Branch does not exist, let's create it
-    git switch -q -C "$branch" "origin/$target_branch"
+  # Scope the stash to just this package: parallel Phase A leaves all other
+  # packages' updates in the worktree, and a global stash would drop them here.
+  git stash push -q -- "$pkgbase"
+
+  # Do all branch work in an isolated worktree: switching branches in the main
+  # worktree would refuse (or clobber) the other packages' pending changes.
+  tmpwork="$(mktemp -d)"
+  trap 'if [ -n "${tmpwork:-}" ]; then git worktree remove --force "$tmpwork" >/dev/null 2>&1 || true; rm -rf "$tmpwork"; fi' EXIT
+  git worktree add --quiet --detach "$tmpwork" "$base_ref"
+  (
+    cd "$tmpwork" || exit 1
     git checkout stash -q -- "$pkgbase"
     git add "$pkgbase"
-    git commit -q -m "chore(update): $pkgbase"
-    git push --force-with-lease origin "$CHANGE_BRANCH"
-  fi
+    # Skip when the branch already carries exactly these changes
+    if ! git diff --staged --exit-code --quiet; then
+      git commit -q -m "chore(update): $pkgbase"
+      git push --force-with-lease origin "HEAD:refs/heads/$branch"
+    fi
+  )
+  git worktree remove --force "$tmpwork"
+  rm -rf "$tmpwork"
   git stash drop -q
 }
 PKGBASE="$1"
@@ -219,15 +218,17 @@ else
   TARGET_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 fi
 
-ORIGINAL_REF="$(git rev-parse HEAD)"
 CHANGE_BRANCH="update-$PKGBASE"
 
 if [ "$2" == "true" ]; then
-  # Go one commit further back
-  git -c advice.detachedHead=false checkout -q HEAD^
+  # If we already made a commit, build the PR branch one commit further back to
+  # avoid merge conflicts: the current commit is very likely to be amended later.
+  BASE_REF="$(git rev-parse HEAD^)"
+else
+  BASE_REF="origin/$TARGET_BRANCH"
 fi
 
-manage_branch "$CHANGE_BRANCH" "$TARGET_BRANCH" "$PKGBASE"
+manage_branch "$CHANGE_BRANCH" "$BASE_REF" "$PKGBASE"
 
 if [ -v GITLAB_CI ]; then
   create_gitlab_pr "$PKGBASE" "$CHANGE_BRANCH" "$TARGET_BRANCH" "${ASSIGN_TO_ID:-}"
@@ -237,6 +238,3 @@ else
   UTIL_PRINT_WARNING "Pull request creation is only supported on GitLab CI/GitHub Actions. Please disable CI_HUMAN_REVIEW."
   exit 0
 fi
-
-# Switch back to the original branch
-git -c advice.detachedHead=false checkout -q "$ORIGINAL_REF"

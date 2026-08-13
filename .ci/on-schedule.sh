@@ -70,7 +70,7 @@ function manage_state() {
   git worktree add .newstate -B state --orphan -q
 }
 
-# Loop through all packages to do optimized aur RPC calls
+# Collect timestamps and maintainer info for all AUR packages managed by this repository.
 # $1 = Output associative timestamp array
 # $2 = Output associative maintainers array
 function collect_aur_info() {
@@ -99,8 +99,7 @@ function collect_aur_info() {
     fi
   done
 
-  # Get all timestamps from AUR
-  http_proxy="$CI_AUR_PROXY" https_proxy="$CI_AUR_PROXY" UTIL_FETCH_AUR_INFO collect_aur_timestamps_output collect_aur_maintainers_output "${AUR_PACKAGES[*]}"
+  UTIL_FETCH_AUR_INFO collect_aur_timestamps_output collect_aur_maintainers_output "${AUR_PACKAGES[*]}"
 }
 
 function collect_changed_libs() {
@@ -118,9 +117,19 @@ function collect_changed_libs() {
   local _TEMP_LIB
   _TEMP_LIB="$(mktemp -d)"
 
+  # Parse all configured databases in parallel; each writes to its own state file
+  local repo jobs=()
   for repo in "${link_array[@]}"; do
-    UTIL_PARSE_DATABASE "${repo}" "${_TEMP_LIB}"
+    # shellcheck disable=SC2086
+    ( UTIL_PARSE_DATABASE "${repo}" "${_TEMP_LIB}" ) 2>/dev/null &
+    jobs+=("$!")
   done
+
+  for job in "${jobs[@]}"; do
+    wait "$job" || true
+  done
+
+  cat "${_TEMP_LIB}"/version-state-* >"${_TEMP_LIB}/version-state" 2>/dev/null || true
 
   # Sort versions file in-place because comm requires it
   sort -o "${_TEMP_LIB}/version-state"{,}
@@ -135,13 +144,24 @@ function collect_changed_libs() {
   rm -rf "$_TEMP_LIB"
 }
 
+COMMIT_PENDING_AMEND=false
+
+# Dump the accumulated staged changes into the current commit.
+function flush-commit() {
+  if [ "$COMMIT_PENDING_AMEND" == "true" ]; then
+    git commit -q --amend --no-edit
+    COMMIT_PENDING_AMEND=false
+  fi
+}
+
 function generate-commit() {
   if [[ "$1" != ".final" ]]; then
     COMMIT_MESSAGE_PACKAGES+=("$1")
     if [[ "$COMMIT" == "false" ]]; then
       COMMIT=true
     else
-      git commit -q --amend --no-edit
+      # Defer the amend so we rewrite the commit object only once per run
+      COMMIT_PENDING_AMEND=true
       return
     fi
   fi
@@ -592,6 +612,14 @@ function update_nvchecker() {
 
   UTIL_PRINT_INFO "$pkgbase: nvchecker detected update to $version."
 
+  # Backup files before modifying them so we can restore without touching the git index
+  local backup_dir
+  backup_dir="$(mktemp -d "${TMPDIR}/nvchecker-backup.XXXXXX")"
+  cp "$pkgbase/PKGBUILD" "$backup_dir/"
+  if [ -f "$pkgbase/.SRCINFO" ]; then
+    cp "$pkgbase/.SRCINFO" "$backup_dir/"
+  fi
+
   gawk -i inplace -f .ci/awk/update-pkgbuild-nvchecker.awk \
     -v TARGET_VERSION="$target_version" \
     -v TARGET_REVISION="$revision" \
@@ -600,9 +628,14 @@ function update_nvchecker() {
 
   if ! UTIL_UPDATE_CHECKSUMS "$pkgbase"; then
     UTIL_PRINT_WARNING "$pkgbase: Checksum update failed. Reverting changes."
-    git checkout -- "$pkgbase"
+    cp "$backup_dir/PKGBUILD" "$pkgbase/PKGBUILD"
+    if [ -f "$backup_dir/.SRCINFO" ]; then
+      cp "$backup_dir/.SRCINFO" "$pkgbase/.SRCINFO"
+    fi
+    rm -rf "$backup_dir"
     return 0
   fi
+  rm -rf "$backup_dir"
 
   VARIABLES_UPDATE_NVCHECKER[CI_ANY_UPDATE]=true
   if [ "${CI_NVCHECKER_REVIEW:-false}" == "true" ]; then
@@ -685,14 +718,22 @@ collect_changed_libs CHANGED_LIBS
 
 UTIL_SETUP_CLONE
 
-# Loop through all packages to check if they need to be updated
-for package in "${PACKAGES[@]}"; do
+# Phase A (parallel): workers must not touch the git index/HEAD — phase B does.
+
+UPDATE_RESULTS_DIR="${TMPDIR}/update-results"
+UPDATE_LOGS_DIR="${TMPDIR}/update-logs"
+mkdir -p "$UPDATE_RESULTS_DIR" "$UPDATE_LOGS_DIR"
+
+# $1: package
+function update_package_worker() {
+  set -euo pipefail
+  local package="$1"
   unset VARIABLES
   declare -A VARIABLES=()
   UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || true
 
   if [[ "${VARIABLES[CI_NVCHECKER]:-false}" == "true" ]]; then
-    update_nvchecker VARIABLES || { UTIL_PRINT_ERROR "$package: nvchecker update failed with an unknown error."; continue; }
+    update_nvchecker VARIABLES || { UTIL_PRINT_ERROR "$package: nvchecker update failed with an unknown error."; return 0; }
   else
     update_pkgbuild VARIABLES
   fi
@@ -703,17 +744,55 @@ for package in "${PACKAGES[@]}"; do
   UTIL_LOAD_CUSTOM_HOOK "./${package}" "./${package}/.CI/update.sh" && VARIABLES[CI_ANY_UPDATE]=true || true
   UTIL_WRITE_MANAGED_PACKAGE "$package" VARIABLES
 
-  if [ "${VARIABLES[CI_ANY_UPDATE]:-false}" != "true" ]; then
-    continue
+  # Record the outcome so the serial phase can pick this package up
+  if [ "${VARIABLES[CI_ANY_UPDATE]:-false}" == "true" ]; then
+    {
+      echo "CI_REQUIRES_REVIEW=${VARIABLES[CI_REQUIRES_REVIEW]:-false}"
+      echo "CI_NVCHECKER_REVIEW_REQUIRED=${VARIABLES[CI_NVCHECKER_REVIEW_REQUIRED]:-false}"
+    } >"${UPDATE_RESULTS_DIR}/${package}.result"
   fi
+}
+
+function update_package_worker_logged() {
+  local package="$1"
+  # Stream live while keeping a per-package log for the record.
+  update_package_worker "$package" 2>&1 | tee "${UPDATE_LOGS_DIR}/${package}.log"
+}
+
+CI_MAX_PARALLEL="$(UTIL_RESOLVE_MAX_PARALLEL)"
+
+UTIL_PRINT_INFO "Checking ${#PACKAGES[@]} packages for updates in parallel ($CI_MAX_PARALLEL workers)..."
+UTIL_RUN_PARALLEL "$CI_MAX_PARALLEL" "${PACKAGES[@]}" -- update_package_worker_logged
+
+# Phase B (serial): all git operations happen here.
+
+for package in "${PACKAGES[@]}"; do
+  result_file="${UPDATE_RESULTS_DIR}/${package}.result"
+  [ -f "$result_file" ] || continue
+
+  unset VARIABLES
+  declare -A VARIABLES=()
+  UTIL_READ_MANAGED_PACAKGE "$package" VARIABLES || true
+
+  # Recover the transient flags recorded by the worker
+  CI_REQUIRES_REVIEW=false
+  CI_NVCHECKER_REVIEW_REQUIRED=false
+  while IFS= read -r line; do
+    case "$line" in
+      CI_REQUIRES_REVIEW=*) CI_REQUIRES_REVIEW="${line#*=}" ;;
+      CI_NVCHECKER_REVIEW_REQUIRED=*) CI_NVCHECKER_REVIEW_REQUIRED="${line#*=}" ;;
+    esac
+  done <"$result_file"
 
   if ! git diff --exit-code --quiet -- "$package"; then
-    git add "$package"
-
     # shellcheck disable=SC2102
-    if [[ -v VARIABLES[CI_REQUIRES_REVIEW] ]] && [ "${VARIABLES[CI_REQUIRES_REVIEW]}" == "true" ]; then
-      if [[ -v VARIABLES[CI_NVCHECKER_REVIEW_REQUIRED] ]] && [ "${VARIABLES[CI_NVCHECKER_REVIEW_REQUIRED]}" == "true" ]; then
+    if [ "$CI_REQUIRES_REVIEW" == "true" ]; then
+      if [ "$CI_NVCHECKER_REVIEW_REQUIRED" == "true" ]; then
         UTIL_PRINT_INFO "$package: Creating PR for review due to CI_NVCHECKER_REVIEW."
+        # create-pr stashes the index; flush any deferred amends from previous
+        # packages first, so the stash only contains this package's changes
+        flush-commit
+        git add "$package"
         if [ "$COMMIT" == "false" ]; then
           .ci/create-pr.sh "$package" false "$CI_HUMAN_REVIEW_ASSIGNEE" nvchecker
         else
@@ -734,6 +813,8 @@ for package in "${PACKAGES[@]}"; do
         # Drop back to normal update flow
       else
         UTIL_PRINT_INFO "$package: Creating PR for review due to untrusted maintainer(s)$maintainer_info"
+        flush-commit
+        git add "$package"
         if [ "$COMMIT" == "false" ]; then
           .ci/create-pr.sh "$package" false "$CI_HUMAN_REVIEW_ASSIGNEE"
         else
@@ -747,6 +828,7 @@ for package in "${PACKAGES[@]}"; do
     fi
 
     # Normal update flow
+    git add "$package"
     generate-commit "$package"
 
     # We don't want to schedule packages that have a specific trigger to prevent
