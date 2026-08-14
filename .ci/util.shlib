@@ -602,6 +602,10 @@ function UTIL_SET_GIT_IDENTITY() {
     # Silence some very insane log spam. Main is set by default and the silenced
     # message is declared as hint.
     git config --global init.defaultBranch "main"
+
+    # AUR packages often carry trailing whitespace in their PKGBUILD; the
+    # path-scoped stash applies the diff via git apply and warns about it.
+    git config --global apply.whitespace nowarn
 }
 
 function UTIL_SETUP_CLONE() {

@@ -144,26 +144,13 @@ function collect_changed_libs() {
   rm -rf "$_TEMP_LIB"
 }
 
-COMMIT_PENDING_AMEND=false
-
-# Dump the accumulated staged changes into the current commit.
-function flush-commit() {
-  if [ "$COMMIT_PENDING_AMEND" == "true" ]; then
-    git commit -q --amend --no-edit
-    COMMIT_PENDING_AMEND=false
-  fi
-}
-
+# Accumulate the update commits in memory and only commit once at the end of
+# phase B, since create-pr no longer depends on the state of the main branch.
 function generate-commit() {
   if [[ "$1" != ".final" ]]; then
     COMMIT_MESSAGE_PACKAGES+=("$1")
-    if [[ "$COMMIT" == "false" ]]; then
-      COMMIT=true
-    else
-      # Defer the amend so we rewrite the commit object only once per run
-      COMMIT_PENDING_AMEND=true
-      return
-    fi
+    COMMIT=true
+    return
   fi
 
   local COMMIT_MESSAGE COMMIT_DESCRIPTION
@@ -176,13 +163,7 @@ function generate-commit() {
     COMMIT_MESSAGE+=" [skip ci]"
   fi
 
-  local commit_args=("-q")
-  if [[ "$1" == ".final" ]]; then
-    commit_args+=("--amend")
-  fi
-
-  commit_args+=("-m" "$COMMIT_MESSAGE")
-
+  local commit_args=("-q" "-m" "$COMMIT_MESSAGE")
   if [[ -n "$COMMIT_DESCRIPTION" ]]; then
     commit_args+=("-m" "$COMMIT_DESCRIPTION")
   fi
@@ -789,15 +770,7 @@ for package in "${PACKAGES[@]}"; do
     if [ "$CI_REQUIRES_REVIEW" == "true" ]; then
       if [ "$CI_NVCHECKER_REVIEW_REQUIRED" == "true" ]; then
         UTIL_PRINT_INFO "$package: Creating PR for review due to CI_NVCHECKER_REVIEW."
-        # create-pr stashes the index; flush any deferred amends from previous
-        # packages first, so the stash only contains this package's changes
-        flush-commit
-        git add "$package"
-        if [ "$COMMIT" == "false" ]; then
-          .ci/create-pr.sh "$package" false "$CI_HUMAN_REVIEW_ASSIGNEE" nvchecker
-        else
-          .ci/create-pr.sh "$package" true "$CI_HUMAN_REVIEW_ASSIGNEE" nvchecker
-        fi
+        .ci/create-pr.sh "$package" "$CI_HUMAN_REVIEW_ASSIGNEE" nvchecker
         continue
       fi
 
@@ -813,15 +786,7 @@ for package in "${PACKAGES[@]}"; do
         # Drop back to normal update flow
       else
         UTIL_PRINT_INFO "$package: Creating PR for review due to untrusted maintainer(s)$maintainer_info"
-        flush-commit
-        git add "$package"
-        if [ "$COMMIT" == "false" ]; then
-          .ci/create-pr.sh "$package" false "$CI_HUMAN_REVIEW_ASSIGNEE"
-        else
-          # If we already made a commit, we should go one commit further back to avoid merge conflicts
-          # This is because there is a very high chance this current commit will be amended
-          .ci/create-pr.sh "$package" true "$CI_HUMAN_REVIEW_ASSIGNEE"
-        fi
+        .ci/create-pr.sh "$package" "$CI_HUMAN_REVIEW_ASSIGNEE"
         # Prevent from dropping into the normal update flow, since we already created the PR
         continue
       fi
@@ -870,8 +835,16 @@ if [ "$COMMIT" == "true" ]; then
   git add .ci/aur-state
   generate-commit ".final"
 
-  git tag -f scheduled
-  git push --atomic origin HEAD:main +state +refs/tags/scheduled "${git_push_args[@]}"
+  git tag -f scheduled >/dev/null
+  if ! push_output=$(git push --quiet --atomic origin HEAD:main +state +refs/tags/scheduled "${git_push_args[@]}" 2>&1); then
+    UTIL_PRINT_ERROR "Failed to push main/state/scheduled:\n$push_output"
+    exit 1
+  fi
+  UTIL_PRINT_INFO "Pushed main, state and scheduled tag."
 else
-  git push --atomic origin +state "${git_push_args[@]}"
+  if ! push_output=$(git push --quiet --atomic origin +state "${git_push_args[@]}" 2>&1); then
+    UTIL_PRINT_ERROR "Failed to push state:\n$push_output"
+    exit 1
+  fi
+  UTIL_PRINT_INFO "Pushed state."
 fi

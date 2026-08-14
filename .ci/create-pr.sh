@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # $1: pkgbase
-# $2: Go one commit further back
-# $3: Assign to GitLab user id
-# $4: Review source (optional, "nvchecker" or default)
+# $2: Assign to GitLab user id
+# $3: Review source (optional, "nvchecker" or default)
 
 # shellcheck source=./util.shlib
 source .ci/util.shlib
@@ -28,7 +27,7 @@ function create_gitlab_pr() {
   # Require a list of all the merge request and take a look if there is already
   # one with the same source branch
   local _COUNTBRANCHES _LISTMR _MR_EXISTS BODY
-  if ! _LISTMR=$(curl --fail-with-body --silent "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/merge_requests?state=opened" --header "PRIVATE-TOKEN:${ACCESS_TOKEN}"); then
+  if ! _LISTMR=$(curl --fail-with-body --silent "https://gitlab.com/api/v4/projects/${CI_PROJECT_ID}/merge_requests?state=opened&per_page=100" --header "PRIVATE-TOKEN:${ACCESS_TOKEN}"); then
     UTIL_PRINT_ERROR "$pkgbase: Failed to get list of merge requests."
     return
   fi
@@ -186,7 +185,13 @@ function manage_branch() {
     # Skip when the branch already carries exactly these changes
     if ! git diff --staged --exit-code --quiet; then
       git commit -q -m "chore(update): $pkgbase"
-      git push --force-with-lease origin "HEAD:refs/heads/$branch"
+	  
+      if push_output=$(git push --quiet --force-with-lease origin "HEAD:refs/heads/$branch" 2>&1); then
+        UTIL_PRINT_INFO "$pkgbase: Pushed branch $branch for review."
+      else
+        UTIL_PRINT_ERROR "$pkgbase: Failed to push branch $branch:\n$push_output"
+        exit 1
+      fi
     fi
   )
   git worktree remove --force "$tmpwork"
@@ -194,7 +199,7 @@ function manage_branch() {
   git stash drop -q
 }
 PKGBASE="$1"
-REVIEW_SOURCE="${4:-regular}"
+REVIEW_SOURCE="${3:-regular}"
 
 PR_TITLE="chore(update): $PKGBASE"
 PR_DESCRIPTION="A recent update of this package requires human review! Please check whether any potentially dangerous changes were made."
@@ -220,15 +225,7 @@ fi
 
 CHANGE_BRANCH="update-$PKGBASE"
 
-if [ "$2" == "true" ]; then
-  # If we already made a commit, build the PR branch one commit further back to
-  # avoid merge conflicts: the current commit is very likely to be amended later.
-  BASE_REF="$(git rev-parse HEAD^)"
-else
-  BASE_REF="origin/$TARGET_BRANCH"
-fi
-
-manage_branch "$CHANGE_BRANCH" "$BASE_REF" "$PKGBASE"
+manage_branch "$CHANGE_BRANCH" "origin/$TARGET_BRANCH" "$PKGBASE"
 
 if [ -v GITLAB_CI ]; then
   create_gitlab_pr "$PKGBASE" "$CHANGE_BRANCH" "$TARGET_BRANCH" "${ASSIGN_TO_ID:-}"
