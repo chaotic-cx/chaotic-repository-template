@@ -33,3 +33,5 @@ CI_REBUILD_TRIGGERS=""
 CI_DEFAULT_CLASS=""
 # Colon separated list of package names that should never cause a rebuild of packages
 CI_REBUILD_BLACKLIST=""
+# Maximum number of packages to check/update in parallel during the scheduled run
+CI_MAX_PARALLEL="8"
