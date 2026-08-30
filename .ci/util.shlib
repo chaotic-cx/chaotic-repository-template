@@ -169,6 +169,7 @@ function UTIL_FETCH_VCS_COMMIT() {
 
     # Check if .SRCINFO exists. We can't work with a -git package without it
     if ! [ -f "$pkgbase/.SRCINFO" ]; then
+        UTIL_PRINT_WARNING "$pkgbase: .SRCINFO not found. Cannot fetch the latest commit."
         return 1
     fi
 
@@ -202,11 +203,14 @@ function UTIL_FETCH_VCS_COMMIT() {
         ref="${fragment##*=}"
     fi
 
-    local _NEWEST_COMMIT
-    if ! _NEWEST_COMMIT="$({ git ls-remote "$source" "$ref" 2>/dev/null || [ $? == 141 ]; } | grep -m1 -oP '\w+(?=\t\w)')"; then
+    local _NEWEST_COMMIT _LS_REMOTE_OUTPUT
+    if ! _LS_REMOTE_OUTPUT="$(git ls-remote "$source" "$ref" 2>&1)"; then
+        UTIL_PRINT_WARNING "$pkgbase: git ls-remote failed: $(head -n 1 <<<"$_LS_REMOTE_OUTPUT")"
         return 1
     fi
+    _NEWEST_COMMIT="$(grep -m1 -oP '\w+(?=\t\w)' <<<"$_LS_REMOTE_OUTPUT" || true)"
     if [ -z "$_NEWEST_COMMIT" ]; then
+        UTIL_PRINT_WARNING "$pkgbase: git ls-remote gave no commit for ref '$ref'."
         return 1
     fi
 
