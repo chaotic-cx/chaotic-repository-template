@@ -35,3 +35,10 @@ CI_DEFAULT_CLASS=""
 CI_REBUILD_BLACKLIST=""
 # Maximum number of packages to check/update in parallel during the scheduled run
 CI_MAX_PARALLEL="8"
+# Ask the should-build endpoint before the CI queues a package that got a new
+# upstream git hash. This only covers packages using our VCS package heuristic. When
+# the backend reports a failure loop, The package is not queued. A package can override this 
+# variable in its .CI/config file.
+CI_SHOULD_BUILD_CHECK="false"
+# The backend for the should-build check
+CI_SHOULD_BUILD_ENDPOINT="https://aur.chaotic.cx/backend"
