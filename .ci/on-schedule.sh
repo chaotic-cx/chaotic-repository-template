@@ -258,17 +258,26 @@ function package_changed() {
 
 function package_major_change_normalize() {
   local line="$1"
-  sed -Ee "s/'([a-zA-Z0-9_.-]+)'/\1/g" -e 's/"([a-zA-Z0-9_.-]+)"/\1/g' <<<"$line"
+  sed -Ee "s/'([a-zA-Z0-9_.+-]+)'/\1/g" -e 's/"([a-zA-Z0-9_.+-]+)"/\1/g' <<<"$line"
 }
 
 function package_major_change_sum_legal() {
   local sumline="$1"
   sumline="$(package_major_change_normalize "$sumline")"
 
-  if [[ "$sumline" =~ ^[[:space:]]*([a-fA-F0-9]+|SKIP)?[[:space:]]*$ ]]; then
+  # Only space and tab separate words in bash. [[:space:]] would also accept \v, \f and \r, which
+  # bash keeps inside the word, so "#" after them would not start a comment.
+  local sum='([a-fA-F0-9]+|SKIP)'
+  local sums="(${sum}([[:blank:]]+${sum})*)?"
+  local comment='([[:blank:]]+#.*)?'
+
+  local passRegex="^[[:blank:]]*(#.*|${sums}${comment}[[:blank:]]*)$"
+  local endRegex="^[[:blank:]]*${sums}[[:blank:]]*\)${comment}[[:blank:]]*$"
+
+  if [[ "$sumline" =~ $passRegex ]]; then
     # This is a legal sum line
     echo "PASS"
-  elif [[ "$sumline" =~ ^[[:space:]]*([a-fA-F0-9]+|SKIP)?[[:space:]]*\)[[:space:]]*$ ]]; then
+  elif [[ "$sumline" =~ $endRegex ]]; then
     # Legal sum line (optional) + end of sums array
     # The reason for making the sum optional is to allow for the array to end on a line that only has ")"
     echo "END"
@@ -292,17 +301,23 @@ function package_major_change() {
   inSums=false
   allowPatterns="${3:-}"
 
-  local pkgverRegex='^_?pkgver *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
-  local pkgrelRegex='^pkgrel *= *[a-zA-Z0-9_.-]+[[:space:]]*$'
-  local sumsArrayStartRegex='^(sha(1|224|256|384|512)|md5|b2)sums(_(x86_64|i686|aarch64|armv7h))? *= *\((.*)$'
+  # No blanks around "=": "pkgver= cmd" would run cmd with an empty pkgver in its environment
+  local pkgverRegex='^_?pkgver=[a-zA-Z0-9_.+-]+[[:blank:]]*$'
+
+  # A commit hash as pkgver would let archive/${pkgver} URLs fetch commits from forks of the upstream repo
+  local commitPkgverRegex='^_?pkgver=[0-9a-fA-F]{7,}[[:blank:]]*$'
+  local pkgrelRegex='^pkgrel=[a-zA-Z0-9_.-]+[[:blank:]]*$'
+  local sumsArrayStartRegex='^(sha(1|224|256|384|512)|md5|b2)sums(_([a-zA-Z0-9_]+))?=\((.*)$'
 
   IFS=';' read -ra allowRegexes <<<"$allowPatterns"
 
   # Compare file line by line
   while true; do
     local newFileLineCode=0 oldFileLineCode=0
-    read newFileLine <&3 || newFileLineCode=$?
-    read oldFileLine <&4 || oldFileLineCode=$?
+    # -r: without it, a trailing backslash joins the next line, and a "#" comment would hide it from the check
+    # The -n test keeps a last line without a trailing newline from being skipped
+    read -r newFileLine <&3 || [[ -n "$newFileLine" ]] || newFileLineCode=1
+    read -r oldFileLine <&4 || [[ -n "$oldFileLine" ]] || oldFileLineCode=1
 
     if [[ $newFileLineCode -ne $oldFileLineCode ]]; then
       # One file ended before the other, major change
@@ -363,7 +378,8 @@ function package_major_change() {
     # Check if the line is a legal pkgver or pkgrel change
     # Legal means that both the line in the old file and the line in the new file are okay
     # This prevents a malicious change that changes a line that wasn't a pkgver line before
-    if [[ "$newFileLine" =~ $pkgverRegex && "$oldFileLine" =~ $pkgverRegex ]]; then
+    if [[ "$newFileLine" =~ $pkgverRegex && "$oldFileLine" =~ $pkgverRegex ]] &&
+      ! [[ "$newFileLine" =~ $commitPkgverRegex && "${newFileLine#*=}" =~ [a-fA-F] ]]; then
       # A-okay
       continue
     fi
